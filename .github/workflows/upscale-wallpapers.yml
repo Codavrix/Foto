@@ -1,0 +1,67 @@
+name: Upscale wallpapers to 1920x1080
+
+on:
+  push:
+    paths:
+      - ".github/workflows/upscale-wallpapers.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  upscale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Pillow
+        run: python -m pip install Pillow
+      - name: Upscale source wallpapers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageFilter
+
+          names = [
+              "IMG_20261103_104936_529.jpg",
+              "IMG_20261103_104936_548.jpg",
+              "IMG_20261103_104937_090.jpg",
+              "IMG_20261103_104940_371.jpg",
+              "IMG_20261103_104940_548.jpg",
+          ]
+          out = Path("1920x1080")
+          out.mkdir(exist_ok=True)
+
+          for name in names:
+              src = Path(name)
+              if not src.exists():
+                  raise FileNotFoundError(src)
+              with Image.open(src) as im:
+                  im = im.convert("RGB")
+                  # The originals are widescreen; resize to Full HD while preserving
+                  # the full composition (no crop).
+                  im = im.resize((1920, 1080), Image.Resampling.LANCZOS)
+                  # Mild sharpening compensates for softness introduced by upscaling.
+                  im = im.filter(ImageFilter.UnsharpMask(radius=1.2, percent=115, threshold=3))
+                  target = out / (src.stem + "_1920x1080.jpg")
+                  im.save(target, "JPEG", quality=95, subsampling=0, optimize=True)
+                  print(f"{src} -> {target}")
+          PY
+      - name: Commit Full HD versions
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 1920x1080/
+          if git diff --cached --quiet; then
+            echo "No output changes to commit."
+            exit 0
+          fi
+          git commit -m "Add enhanced Full HD wallpapers"
+          git push origin main
